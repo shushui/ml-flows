@@ -141,8 +141,8 @@
       }],
       "outFunc": "if (!SYSTEM.chat) {\n    say(`Hi, how can I help you today?`);\n}",
       "pos": {
-        "x": -178.09293935624765,
-        "y": -618.2198989042738
+        "x": -157.60291673142729,
+        "y": -886.6391952894207
       },
       "shape": "box",
       "size": {
