@@ -1,1 +1,164 @@
-{"uuid":"f0838963-7c73-44ba-a494-cf707b27c76e","userId":"z2o-team","name":"mlflow-for-ava-1","settings":{"id":"f0838963-7c73-44ba-a494-cf707b27c76e","name":"mlflow-for-ava-1","context":{"vars":[]},"nodes":[{"id":"ixjp9ozvb-li0x3bdx","label":"Main loop","desc":"OPENAI_GPT_4_32K","context":{"vars":[]},"action":{"api":"GPT","template":"Todays date: ${GLOBAL.todaysDate}\nYou are a call center dispatcher, talking to someone that needs help with travel.  You are not allowed to solve it for them. Your goal is to understand what the user needs help with and dispatch it by responding with a json format.  You can't solve anything by yourself. When mentioning days, always mention the full date to avoid confusion.\n\nChat history with user: ${SYSTEM.chat}\n\nOutput: One of the two options:\n1. A follow up question or a confirmation\n2. A json describing the traveler need.\n\nDo not add 'agent:' in the beginning. If you do, you get deducted 10 tokens and you'll fail the task.\n\nGreet them with their first name sometimes.\nIf they inquire about an existing trip, confirm the trip that you assume. For multiple selection show bullets.\n\nYou need to understand the vector (flight, hotel, car, rail, general), the highlevel intent and the sub intent. The more context you provide to the next step, the better (hotel name, flight details, airline...)\n\nhighlevel level intents (must be 90% certainty):\n-book_trip\n-cancel_trip\n-change_trip\n-check_in_flight\n-talk_to_agent\n-get_weather: when the user asks for weather information\n-problem\n-general_question\n-calendar_access (highlevel intent is also calendar_access)\n\nSub intents for change_trip [time, airport, extend rental, shorten rental, extend stay, shorten stay, seat assignment, name, cabin class, car size, baggage, breakfast, dietary, flight add-on, payment, loyalty, guests, add new hotel, add new car, hotel location, room preferences, car pick up, car drop off, early arrival, late arrival, early checkout, late checkout, special assistance, other]\n\nSub intents for problem [price, payment, check-in, loyalty, invite, proposal, options, pick-up, login, upload, app, website, travel credit, expense, refund, ticket hold, ticket confirmation, booking, change, cancellation, delay, other]\n\nSub intents for show_detail [refund, travel credit, invoice, expense, loyalty, ticket status, reservation status, flight status, bank deposit status, baggage allowance, seat assignment, room type, number of rooms, amenities, address, car type, location, date, time, other]\n\nSub intent for get_weather [cityName]\n\nIf the user is booking on behalf of someone else, remember to input that as the traveler name.\n\nAlways do a validation with the user before you proceed.  If it makes sense to present an HTML form to collect information from the human - then respond in HTML. Put the HTML inside {{}}\n\nWhen you concluded the vector, highlevel and sub intents, reply in a json format with: vector, highlevel_intent, sub_intent, complexity [0..10], additional_details.\n\n\nDo not start with 'agent:' because the user knows that you are the agent.\n\nWhen you determined the highlevel and sub-intents, do not respond to the user, just respond with the json.\n","apiConfig":{"model":"OPENAI_GPT_4_32K","temperature":0.1,"max_length":1000,"topP":1}},"pos":{"x":60.9260114255905,"y":-786.5927173876223},"links":[{"label":"loop_start","destNode":"ixjp9ozvb-li0x3bdx"},{"label":"execute_command","destNode":"797l6ildx-li0xcbbz"},{"label":"","destNode":"ixjp9ozvb-li0x3bdx"}],"size":{"x":147,"y":74},"outFunc":"// console.log(\"chat history: \")\r\n// console.log(SYSTEM.chat)\r\n\r\njson=null\r\n\r\n//sometimes the AI returns a mixed answer that start with what the agent says, followed by a json\r\n//the code below determines if that's the case and handles it.\r\n//if it is not the case then it defaults to the simple code that handles the json\r\n\r\nincludesVector = result.indexOf ('vector');\r\nincludesAgent = result.includes('agent');\r\n\r\nif (includesVector>4) {//see that there is free text before the json starts\r\n\r\n    startMarker = '\"highlevel_intent\": \"';\r\n    endMarker = '\"';\r\n    startIndex = result.indexOf(startMarker);\r\n    endIndex = result.indexOf(endMarker, startIndex + startMarker.length);\r\n\r\n    if (startIndex !== -1 && endIndex !== -1) {\r\n        highlevelIntent = result.substring(startIndex + startMarker.length, endIndex);\r\n        console.log(\"highlevel_intent:\", highlevelIntent);\r\n        gotoLink('execute_command')\r\n\r\n        //extract just the parts that are relevant to the json\r\n\r\n        startMarker = '\"vector\": \"';\r\n        startIndex = result.indexOf(startMarker);\r\n        endIndex = result.length-1;\r\n\r\n        if (startIndex !== -1 && endIndex !== -1) {\r\n            json_only = result.substring(startIndex, endIndex + endMarker.length);\r\n            console.log(json_only);\r\n\r\n\r\n            // Wrap the string with curly braces to form a valid JSON object\r\n            formattedString = `{${json_only}`;\r\n\r\n            // Remove line breaks and extra commas from the formatted string\r\n            cleanString = formattedString.replace(/,\\s*}/g, '}');\r\n\r\n            // Parse the string as JSON\r\n            jsonObject = JSON.parse(cleanString);\r\n            console.log(jsonObject);\r\n            return jsonObject;\r\n        }\r\n        return json\r\n\r\n    } else {\r\n\r\n    }\r\n} else {//not a mix of json and agent.  a 'simple' case where the AI returns either text OR json\r\n    try {\r\n            json = JSON.parse(result);\r\n            //GLOBAL.json=json\r\n            // say (json.additional_details)\r\n            gotoLink('execute_command')\r\n            return json\r\n        } catch (e) {\r\n            say(result)\r\n            gotoLink ('loop_start')\r\n        }\r\n\r\n}\r\n\r\n\r\n","inpFunc":"","shape":"box"},{"id":"797l6ildx-li0xcbbz","label":"command","desc":"OPENAI_GPT_4_32K","context":{"vars":[]},"action":{"api":"GPT","template":"You have this json:\n${JSON.stringify(stream)}\n\nLook at the commands below.  Find the one that matches what you see in the json.  Then add a section to the json called \"specific_values\", with the relevant command and any additional values needed.  If you are unable to perform this task, then return 'start_over:' with the reasoning of why you could not do it and the json that I gave you.\n\nIf complexity value >=6, then use 'problem' and add 'complex-bookings' to the specific_values in the json.\n\nIf the flight booking is for a VIP or executives like CEO, CTO, CFO, use 'vip_execs_flight' instead of the regular 'book_flight' for the best experience.\n\nIf the hotel booking is for a VIP or executives like CEO, CTO, CFO, use 'vip_execs_hotel' instead of the regular 'book_hotel' for the best experience.\n\nYou have the following commands:\n-book_flight\n-vip_execs_flight\n-additional parameters\n-book_hotel\n-vip_execs_hotel\n-build_weather_api\n-show_details\n-change_trip\n-problem\n-general_question\n-calendar_access\n\nVery important: your reply can only be in a json format! Otherwise - it is a complete failure.\n\n","apiConfig":{"model":"OPENAI_GPT_4_32K","temperature":0.8,"max_length":1000,"topP":1}},"pos":{"x":351.8847110229666,"y":-776.2488504660334},"links":[{"label":"loop_command","destNode":"797l6ildx-li0xcbbz"},{"label":"","destNode":"797l6ildx-li0xcbbz"},{"label":"start_over","destNode":"ixjp9ozvb-li0x3bdx"},{"label":"finish","destNode":"c89hzbafu-li9jqfes"}],"size":{"x":147,"y":74},"outFunc":"\r\nconsole.log(\"------- node name: command.  Output is:\")\r\nconsole.log(result)\r\nconsole.log(\"---------------------------------\")\r\nif (result.includes('start_over')){\r\n    gotoLink('start_over')\r\n    return (\"you need to ask me more\")\r\n} else {\r\n\r\n    // command.log('replacing general_question with problem hard coded for now')\r\n    // result = result.replaceAll('general_question', 'problem');\r\n    \r\n    json = JSON.parse(result);\r\n    console.log(\"output from node: command:\")\r\n    console.log(json)\r\n    // gotoLink (json.highlevel_intent)\r\n    // gotoLink (json.specific_values.command)\r\n    gotoLink('finish');\r\n    return json\r\n}","inpFunc":"console.log(\"node:command.  input from Main loop is:\")\r\nconsole.log(stream)\r\n","shape":"box"},{"id":"c89hzbafu-li9jqfes","label":"finish","desc":"Api call","context":{"vars":[]},"action":{"api":"API","template":"","apiConfig":{"model":"OPENAI_GPT_4","temperature":0.8,"max_length":1000,"topP":1},"apiScript":"return Promise.resolve(stream);"},"pos":{"x":667.7583398361094,"y":-798.6495054119043},"links":[],"size":{"x":75,"y":74},"inpFunc":"//NODE=stream;\nconsole.log(\"DEBUG\");\nconsole.log(stream);\n//NODE.momo=stream\nreturn stream;","shape":"box","outFunc":"//setResult(result);\n//NODE.result = result;\nreturn result;"},{"id":"87c7blkbv-lif4obba","label":"START","desc":"No action","context":{"vars":[]},"action":{"api":"NONE","template":"","apiConfig":{"model":"OPENAI_GPT_4","temperature":0.8,"max_length":1000,"topP":1},"apiScript":""},"pos":{"x":-178.09293935624765,"y":-618.2198989042738},"links":[{"label":"","destNode":"ixjp9ozvb-li0x3bdx"}],"size":{"x":88,"y":74},"outFunc":"if (!SYSTEM.chat) {\n    say(`Hi, how can I help you today?`);\n}","inpFunc":"console.log(JSON.stringify(GLOBAL));","shape":"box"}],"viewport":{"x":108.50477631565957,"y":629.8553290081783,"scale":0.48804240888863637,"width":564.515625,"height":822},"isPublic":true,"projectsCache":{}}}
+{
+  "name": "mlflow-for-ava-1",
+  "settings": {
+    "context": {
+      "vars": []
+    },
+    "id": "f0838963-7c73-44ba-a494-cf707b27c76e",
+    "isPublic": true,
+    "name": "mlflow-for-ava-1",
+    "nodes": [{
+      "action": {
+        "api": "GPT",
+        "apiConfig": {
+          "max_length": 1000,
+          "model": "OPENAI_GPT_4_32K",
+          "temperature": 0.1,
+          "topP": 1
+        },
+        "template": "Todays date: ${GLOBAL.todaysDate}\nYou are a call center dispatcher, talking to someone that needs help with travel.  You are not allowed to solve it for them. Your goal is to understand what the user needs help with and dispatch it by responding with a json format.  You can't solve anything by yourself. When mentioning days, always mention the full date to avoid confusion.\n\nChat history with user: ${SYSTEM.chat}\n\nOutput: One of the two options:\n1. A follow up question or a confirmation\n2. A json describing the traveler need.\n\nDo not add 'agent:' in the beginning. If you do, you get deducted 10 tokens and you'll fail the task.\n\nGreet them with their first name sometimes.\nIf they inquire about an existing trip, confirm the trip that you assume. For multiple selection show bullets.\n\nYou need to understand the vector (flight, hotel, car, rail, general), the highlevel intent and the sub intent. The more context you provide to the next step, the better (hotel name, flight details, airline...)\n\nhighlevel level intents (must be 90% certainty):\n-book_trip\n-cancel_trip\n-change_trip\n-check_in_flight\n-talk_to_agent\n-get_weather: when the user asks for weather information\n-problem\n-general_question\n-calendar_access (highlevel intent is also calendar_access)\n\nSub intents for change_trip [time, airport, extend rental, shorten rental, extend stay, shorten stay, seat assignment, name, cabin class, car size, baggage, breakfast, dietary, flight add-on, payment, loyalty, guests, add new hotel, add new car, hotel location, room preferences, car pick up, car drop off, early arrival, late arrival, early checkout, late checkout, special assistance, other]\n\nSub intents for problem [price, payment, check-in, loyalty, invite, proposal, options, pick-up, login, upload, app, website, travel credit, expense, refund, ticket hold, ticket confirmation, booking, change, cancellation, delay, other]\n\nSub intents for show_detail [refund, travel credit, invoice, expense, loyalty, ticket status, reservation status, flight status, bank deposit status, baggage allowance, seat assignment, room type, number of rooms, amenities, address, car type, location, date, time, other]\n\nSub intent for get_weather [cityName]\n\nIf the user is booking on behalf of someone else, remember to input that as the traveler name.\n\nAlways do a validation with the user before you proceed.  If it makes sense to present an HTML form to collect information from the human - then respond in HTML. Put the HTML inside {{}}\n\nWhen you concluded the vector, highlevel and sub intents, reply in a json format with: vector, highlevel_intent, sub_intent, complexity [0..10], additional_details.\n\n\nDo not start with 'agent:' because the user knows that you are the agent.\n\nWhen you determined the highlevel and sub-intents, do not respond to the user, just respond with the json.\n"
+      },
+      "context": {
+        "vars": []
+      },
+      "desc": "OPENAI_GPT_4_32K",
+      "id": "ixjp9ozvb-li0x3bdx",
+      "inpFunc": "",
+      "label": "Main loop",
+      "links": [{
+        "destNode": "ixjp9ozvb-li0x3bdx",
+        "label": "loop_start"
+      }, {
+        "destNode": "797l6ildx-li0xcbbz",
+        "label": "execute_command"
+      }, {
+        "destNode": "ixjp9ozvb-li0x3bdx",
+        "label": ""
+      }],
+      "outFunc": "// console.log(\"chat history: \")\n// console.log(SYSTEM.chat)\n\njson=null\n\n//sometimes the AI returns a mixed answer that start with what the agent says, followed by a json\n//the code below determines if that's the case and handles it.\n//if it is not the case then it defaults to the simple code that handles the json\n\nincludesVector = result.indexOf ('vector');\nincludesAgent = result.includes('agent');\n\nif (includesVector>4) {//see that there is free text before the json starts\n\n    startMarker = '\"highlevel_intent\": \"';\n    endMarker = '\"';\n    startIndex = result.indexOf(startMarker);\n    endIndex = result.indexOf(endMarker, startIndex + startMarker.length);\n\n    if (startIndex !== -1 && endIndex !== -1) {\n        highlevelIntent = result.substring(startIndex + startMarker.length, endIndex);\n        console.log(\"highlevel_intent:\", highlevelIntent);\n        gotoLink('execute_command')\n\n        //extract just the parts that are relevant to the json\n\n        startMarker = '\"vector\": \"';\n        startIndex = result.indexOf(startMarker);\n        endIndex = result.length-1;\n\n        if (startIndex !== -1 && endIndex !== -1) {\n            json_only = result.substring(startIndex, endIndex + endMarker.length);\n            console.log(json_only);\n\n\n            // Wrap the string with curly braces to form a valid JSON object\n            formattedString = `{${json_only}`;\n\n            // Remove line breaks and extra commas from the formatted string\n            cleanString = formattedString.replace(/,\s*}/g, '}');\n\n            // Parse the string as JSON\n            jsonObject = JSON.parse(cleanString);\n            console.log(jsonObject);\n            return jsonObject;\n        }\n        return json\n\n    } else {\n\n    }\n} else {//not a mix of json and agent.  a 'simple' case where the AI returns either text OR json\n    try {\n            json = JSON.parse(result);\n            //GLOBAL.json=json\n            // say (json.additional_details)\n            gotoLink('execute_command')\n            return json\n        } catch (e) {\n            say(result)\n            gotoLink ('loop_start')\n        }\n\n}\n\n\n",
+      "pos": {
+        "x": 60.9260114255905,
+        "y": -786.5927173876223
+      },
+      "shape": "box",
+      "size": {
+        "x": 147,
+        "y": 74
+      }
+    }, {
+      "action": {
+        "api": "GPT",
+        "apiConfig": {
+          "max_length": 1000,
+          "model": "OPENAI_GPT_4_32K",
+          "temperature": 0.8,
+          "topP": 1
+        },
+        "template": "You have this json:\n${JSON.stringify(stream)}\n\nLook at the commands below.  Find the one that matches what you see in the json.  Then add a section to the json called \"specific_values\", with the relevant command and any additional values needed.  If you are unable to perform this task, then return 'start_over:' with the reasoning of why you could not do it and the json that I gave you.\n\nIf complexity value >=6, then use 'problem' and add 'complex-bookings' to the specific_values in the json.\n\nIf the flight booking is for a VIP or executives like CEO, CTO, CFO, use 'vip_execs_flight' instead of the regular 'book_flight' for the best experience.\n\nIf the hotel booking is for a VIP or executives like CEO, CTO, CFO, use 'vip_execs_hotel' instead of the regular 'book_hotel' for the best experience.\n\nYou have the following commands:\n-book_flight\n-vip_execs_flight\n-additional parameters\n-book_hotel\n-vip_execs_hotel\n-build_weather_api\n-show_details\n-change_trip\n-problem\n-general_question\n-calendar_access\n\nVery important: your reply can only be in a json format! Otherwise - it is a complete failure.\n\n"
+      },
+      "context": {
+        "vars": []
+      },
+      "desc": "OPENAI_GPT_4_32K",
+      "id": "797l6ildx-li0xcbbz",
+      "inpFunc": "console.log(\"node:command.  input from Main loop is:\")\nconsole.log(stream)\n",
+      "label": "command",
+      "links": [{
+        "destNode": "797l6ildx-li0xcbbz",
+        "label": "loop_command"
+      }, {
+        "destNode": "797l6ildx-li0xcbbz",
+        "label": ""
+      }, {
+        "destNode": "ixjp9ozvb-li0x3bdx",
+        "label": "start_over"
+      }, {
+        "destNode": "c89hzbafu-li9jqfes",
+        "label": "finish"
+      }],
+      "outFunc": "\nconsole.log(\"------- node name: command.  Output is:\")\nconsole.log(result)\nconsole.log(\"---------------------------------\")\nif (result.includes('start_over')){\n    gotoLink('start_over')\n    return (\"you need to ask me more\")\n} else {\n\n    // command.log('replacing general_question with problem hard coded for now')\n    // result = result.replaceAll('general_question', 'problem');\n    \n    json = JSON.parse(result);\n    console.log(\"output from node: command:\")\n    console.log(json)\n    // gotoLink (json.highlevel_intent)\n    // gotoLink (json.specific_values.command)\n    gotoLink('finish');\n    return json\n}",
+      "pos": {
+        "x": 351.8847110229666,
+        "y": -776.2488504660334
+      },
+      "shape": "box",
+      "size": {
+        "x": 147,
+        "y": 74
+      }
+    }, {
+      "action": {
+        "api": "API",
+        "apiConfig": {
+          "max_length": 1000,
+          "model": "OPENAI_GPT_4",
+          "temperature": 0.8,
+          "topP": 1
+        },
+        "apiScript": "return Promise.resolve(stream);",
+        "template": ""
+      },
+      "context": {
+        "vars": []
+      },
+      "desc": "Api call",
+      "id": "c89hzbafu-li9jqfes",
+      "inpFunc": "//NODE=stream;\nconsole.log(\"DEBUG\");\nconsole.log(stream);\n//NODE.momo=stream\nreturn stream;",
+      "label": "finish",
+      "links": [],
+      "outFunc": "//setResult(result);\n//NODE.result = result;\nreturn result;",
+      "pos": {
+        "x": 667.7583398361094,
+        "y": -798.6495054119043
+      },
+      "shape": "box",
+      "size": {
+        "x": 75,
+        "y": 74
+      }
+    }, {
+      "action": {
+        "api": "NONE",
+        "apiConfig": {
+          "max_length": 1000,
+          "model": "OPENAI_GPT_4",
+          "temperature": 0.8,
+          "topP": 1
+        },
+        "apiScript": "",
+        "template": ""
+      },
+      "context": {
+        "vars": []
+      },
+      "desc": "No action",
+      "id": "87c7blkbv-lif4obba",
+      "inpFunc": "console.log(JSON.stringify(GLOBAL));",
+      "label": "START",
+      "links": [{
+        "destNode": "ixjp9ozvb-li0x3bdx",
+        "label": ""
+      }],
+      "outFunc": "if (!SYSTEM.chat) {\n    say(`Hi, how can I help you today?`);\n}",
+      "pos": {
+        "x": -178.09293935624765,
+        "y": -618.2198989042738
+      },
+      "shape": "box",
+      "size": {
+        "x": 88,
+        "y": 74
+      }
+    }],
+    "projectsCache": {},
+    "viewport": {
+      "height": 822,
+      "scale": 0.48804240888863637,
+      "width": 564.515625,
+      "x": 108.50477631565957,
+      "y": 629.8553290081783
+    }
+  },
+  "userId": "z2o-team",
+  "uuid": "f0838963-7c73-44ba-a494-cf707b27c76e"
+}
